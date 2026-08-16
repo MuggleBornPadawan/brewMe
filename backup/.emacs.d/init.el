@@ -139,13 +139,27 @@
 (add-hook 'clojure-mode-hook #'subword-mode)
 (add-hook 'clojure-ts-mode-hook #'subword-mode)
 
-;; org mode - clojure source code
+;; org mode - load languages for babel
 (use-package org
+  :ensure t
   :config
+  ;; Ensure language major modes are installed (required for Babel evaluation)
+  (dolist (lang-pkg '(go-mode rust-mode elixir-mode scala-mode))
+    (unless (package-installed-p lang-pkg)
+      (package-install lang-pkg)))
+  
   (org-babel-do-load-languages
    'org-babel-load-languages
    '((emacs-lisp . t)
-     (clojure . t))))
+     (clojure . t)
+     (python . t)
+     (js . t)
+     (css . t)
+     (sql . t)
+     (C . t)        ; handles C and C++
+     (go . t)
+     (rust . t)
+     (shell . t))))
 
 ;; Configure backups
 (setq backup-directory-alist `(("." . "~/.emacs.d/backups")))
@@ -282,10 +296,13 @@
   :bind (("C-c g s" . gptel-send)
          ("C-c g m" . gptel-menu))
   :config
+  ;; Register Ollama backend
   (gptel-make-ollama "Ollama"
     :host "localhost:11434"
     :stream t
-    :models '("llama3.1"
+    :models '("qwen3.8:27b-mlx"
+              "muse-glimmer:30b-mlx"
+              "llama3.1:latest"
               "llama3.2:latest"
               "gemma4:e4b-mlx"
               "qwen2.5:14b"
@@ -313,13 +330,14 @@
                     "gemini-1.5-flash"
                     "gemini-1.5-pro")))
 
-  (setq gptel-model "gemini-3.5-flash")
+  ; (setq gptel-model "muse-glimmer:30b-mlx")
+  (setq gptel-model "gemini-3.5-flash-lite")
   ; (setq gptel-model "qwen2.5:14b")
   ; (setq gptel-model "qwen3.6:35b-a3b-coding-nvfp4")
   (setq gptel-default-mode 'org-mode)
   
   ;; Configure global temperature (0.0 = deterministic/factual, 1.0+ = creative)
-  (setq gptel-temperature 0.0)
+  (setq gptel-temperature 1.0)
 
   ;; Advise request-data to inject top_p and top_k parameters for Ollama
   (advice-add 'gptel--request-data :filter-return
