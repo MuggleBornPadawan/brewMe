@@ -13,7 +13,7 @@ export PATH
 # Determine the workspace root directory (parent of scripts directory)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-BACKUP_DIR="${REPO_ROOT}/backup"
+BACKUP_DIR="$HOME/.dotfiles/backup"
 
 # Default files to back up (relative to home directory)
 # You can customize this list to include other files or folders.
@@ -23,6 +23,9 @@ DEFAULT_DOTFILES=(
     ".zshrc"
     ".gitconfig"
     ".emacs.d/init.el"
+    ".emacs.d/custom.el"
+    ".emacs.d/lisp"
+    ".emacs.d/.mc-lists.el"
     ".config/btop"
     ".config/htop"
     ".config/neofetch"
