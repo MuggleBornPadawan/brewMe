@@ -15,10 +15,6 @@ if [ -f "${REPO_ROOT}/scripts/backup_skills.sh" ]; then
     "${REPO_ROOT}/scripts/backup_skills.sh"
 fi
 
-if [ -f "${REPO_ROOT}/scripts/backup_dotfiles.sh" ]; then
-    "${REPO_ROOT}/scripts/backup_dotfiles.sh"
-fi
-
 echo "=== Pushing Dotfiles ==="
 cd ~/.dotfiles
 git add .
