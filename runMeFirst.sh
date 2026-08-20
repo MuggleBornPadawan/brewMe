@@ -37,6 +37,14 @@ fi
 
 # Now perform system package updates
 
+echo "=== Updating MuggleBornPadawan Repo ==="
+if [ -d "$HOME/Public/MuggleBornPadawan" ]; then
+    cd "$HOME/Public/MuggleBornPadawan"
+    git pull
+else
+    echo "MuggleBornPadawan repository directory not found, skipping update."
+fi
+
 echo "=== Starting system package updates ==="
 
 # 1. Update Homebrew
