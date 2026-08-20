@@ -1,18 +1,46 @@
 ;;; init.el --- Emacs Initialization File -*- lexical-binding: t; -*-
 
+;; ==========================================
+;; 1. Startup & Performance Optimization
+;; ==========================================
+
+;; Silence native compilation warnings if native compilation is supported
+(when (boundp 'native-comp-async-report-warnings-errors)
+  (setq native-comp-async-report-warnings-errors 'silent))
+
+;; Temporary increase to garbage collection threshold to speed up startup
+(setq gc-cons-threshold (* 50 1024 1024))
+(add-hook 'emacs-startup-hook
+          (lambda ()
+            (setq gc-cons-threshold (* 2 1024 1024))))
+
 (setq inhibit-startup-screen t)
 (setq initial-scratch-message nil)
 (setq initial-major-mode 'fundamental-mode)
-;;(setq initial-buffer-choice t)
-;;(setq initial-buffer-choice "~/path/to/your/file.txt")
 
-;; Package Management
+;; Add custom lisp folder to load path
+(add-to-list 'load-path (expand-file-name "lisp" user-emacs-directory))
+
+;; ==========================================
+;; 2. Emacs Custom File Redirection
+;; ==========================================
+
+;; Save Custom variables and faces in a separate file to keep init.el clean.
+;; Loaded early so package setups can override or respect customized values.
+(setq custom-file (expand-file-name "custom.el" user-emacs-directory))
+(when (file-exists-p custom-file)
+  (load custom-file))
+
+;; ==========================================
+;; 3. Package Management Setup
+;; ==========================================
+
 (require 'package)
 (add-to-list 'package-archives '("gnu" . "https://elpa.gnu.org/packages/") t)
 (add-to-list 'package-archives '("melpa" . "https://melpa.org/packages/") t)
 (package-initialize)
 
-;; Use the `use-package` package for managing other packages
+;; Install use-package if not present
 (unless (package-installed-p 'use-package)
   (package-refresh-contents)
   (package-install 'use-package))
@@ -20,178 +48,111 @@
 (require 'use-package)
 (setq use-package-always-ensure t)
 
-;; multiple cursors 
-(use-package multiple-cursors
-  :ensure t)
+;; Profile startup using benchmark-init (must be after package setup)
+;; To prevent use-package load failures on first-run, we manually check and install.
+(unless (package-installed-p 'benchmark-init)
+  (package-install 'benchmark-init))
 
-;; Install and configure Magit
-(use-package magit
-  :ensure t
-  :bind (("C-x g" . magit-status)))
+(when (require 'benchmark-init nil 'noerror)
+  (benchmark-init/activate))
 
-;; Ensure modus-themes package is installed
-(use-package modus-themes
-  :ensure t)
+;; ==========================================
+;; 4. Core UI & Editor Customization
+;; ==========================================
 
-;; Set up automatic theme switching based on macOS system appearance (light/dark mode)
-(use-package auto-dark
-  :ensure t
-  :init
-  (setq auto-dark-allow-osascript t)
-  :custom
-  (auto-dark-light-theme 'modus-operandi) ; Built-in high-contrast light theme
-  (auto-dark-dark-theme 'modus-vivendi)   ; Built-in high-contrast dark theme
-  :config
-  (auto-dark-mode 1))
+;; Basic UI element removal
+(menu-bar-mode -1)
+(tool-bar-mode -1)
+(scroll-bar-mode -1)
 
-;; Enable smooth scrolling and improve rendering
-(setq redisplay-dont-pause t
-      scroll-margin 1
+;; Font & Line Settings
+(set-face-attribute 'default nil
+                    :family "Menlo"      ; macOS built-in coding font
+                    :height 260          ; 26pt
+                    :weight 'normal)
+
+(setq-default line-spacing 0.1)
+(setq-default truncate-lines t)
+(global-display-line-numbers-mode -1)
+(global-font-lock-mode t)
+(column-number-mode t)
+
+;; Title bar blend for macOS
+(add-to-list 'default-frame-alist '(ns-appearance . dark))
+(add-to-list 'default-frame-alist '(ns-transparent-titlebar . t))
+
+;; Smooth Scrolling Settings
+(setq scroll-margin 1
       scroll-step 1
       scroll-conservatively 10000
       scroll-preserve-screen-position 1)
 
-;; Make title bar blend in with the theme on macOS (Emacs Mac Port / NS Port)
-(add-to-list 'default-frame-alist '(ns-appearance . dark))
-(add-to-list 'default-frame-alist '(ns-transparent-titlebar . t))
+;; Highlight Regions & Xref matching faces
+(set-face-attribute 'region nil :background "darkslateblue")
 
-;; Set up font using the best practice face attributes on macOS
-(set-face-attribute 'default nil
-                    :family "Menlo"      ; macOS built-in coding font (or "SF Mono", "Fira Code", etc.)
-                    :height 260          ; 1/10th of a point (260 = 26pt)
-                    :weight 'normal)
+(with-eval-after-load 'info
+  (set-face-attribute 'info-index-match nil :background "darkslateblue"))
 
-;; Add a touch of line spacing for code readability (10% of font height)
-(setq-default line-spacing 0.1)
+(with-eval-after-load 'pulse
+  (require 'pulse)
+  (when (facep 'pulse-highlight-face)
+    (set-face-attribute 'pulse-highlight-face nil :background "darkslateblue"))
+  (when (facep 'pulse-highlight-start-face)
+    (set-face-attribute 'pulse-highlight-start-face nil :background "darkslateblue")))
 
-;; Set line numbers
-(global-display-line-numbers-mode t)
+(with-eval-after-load 'xref
+  (require 'xref)
+  (when (facep 'xref-match)
+    (set-face-attribute 'xref-match nil :background "darkslateblue")))
 
-;; Enable syntax highlighting
-(global-font-lock-mode t)
+;; Fullscreen on launch (graphic only)
+(when (display-graphic-p)
+  (toggle-frame-fullscreen))
 
-;; Enable column numbers
-(column-number-mode t)
+;; ==========================================
+;; 5. History, Backup, & Persistence
+;; ==========================================
 
-;; Set up basic UI improvements
-(menu-bar-mode -1)       ;; Disable the menu bar
-(tool-bar-mode -1)       ;; Disable the tool bar
-(scroll-bar-mode -1)     ;; Disable the scroll bar
-
-;; CIDER - Clojure(Script) Interactive Development Environment that Rocks
-(use-package cider
-  :ensure t
-  :bind (("C-c u" . cider-user-ns)
-         ("C-M-r" . cider-refresh))
+(use-package recentf
+  :ensure nil
   :config
-  (setq org-babel-clojure-backend 'cider)
-  (setq cider-show-error-buffer t
-        cider-auto-select-error-buffer t
-        cider-repl-history-file (expand-file-name "cider-history" user-emacs-directory)
-        cider-repl-pop-to-buffer-on-connect t
-        cider-repl-wrap-history t)
-  
-  ;; Hook CIDER to both standard Clojure and Tree-Sitter Clojure modes
-  (add-hook 'clojure-mode-hook #'cider-mode)
-  (add-hook 'clojure-ts-mode-hook #'cider-mode)
+  (recentf-mode 1))
 
-  ;; Custom helper functions from the Clojure for the Brave and True config
-  (defun cider-start-http-server ()
-    (interactive)
-    (cider-load-buffer)
-    (let ((ns (cider-current-ns)))
-      (cider-repl-set-ns ns)
-      (cider-interactive-eval (format "(println '(def server (%s/start))) (println 'server)" ns))
-      (cider-interactive-eval (format "(def server (%s/start)) (println server)" ns))))
-
-  (defun cider-refresh ()
-    (interactive)
-    (cider-interactive-eval (format "(user/reset)")))
-
-  (defun cider-user-ns ()
-    (interactive)
-    (cider-repl-set-ns "user")))
-
-;; Paredit - structural editing for Lisp/Clojure code
-(use-package paredit
-  :ensure t
-  :hook ((clojure-mode . paredit-mode)
-         (clojure-ts-mode . paredit-mode)
-         (cider-repl-mode . paredit-mode)
-         (emacs-lisp-mode . paredit-mode)
-         (lisp-mode . paredit-mode)))
-
-;; clj-refactor - extra refactorings for Clojure
-(use-package clj-refactor
-  :ensure t
-  :hook ((clojure-mode . clj-refactor-mode)
-         (clojure-ts-mode . clj-refactor-mode))
+(use-package savehist
+  :ensure nil
+  :init
+  (setq history-length 25)
   :config
-  (cljr-add-keybindings-with-prefix "C-c C-m"))
+  (savehist-mode 1))
 
-;; cider-hydra - menu of CIDER commands
-(use-package cider-hydra
-  :ensure t
-  :hook ((clojure-mode . cider-hydra-mode)
-         (clojure-ts-mode . cider-hydra-mode)))
-
-;; Enable subword-mode for Clojure to treat camelCase words as separate
-(add-hook 'clojure-mode-hook #'subword-mode)
-(add-hook 'clojure-ts-mode-hook #'subword-mode)
-
-;; org mode - load languages for babel
-(use-package org
-  :ensure t
+(use-package saveplace
+  :ensure nil
   :config
-  ;; Ensure language major modes are installed (required for Babel evaluation)
-  (dolist (lang-pkg '(go-mode rust-mode elixir-mode scala-mode))
-    (unless (package-installed-p lang-pkg)
-      (package-install lang-pkg)))
-  
-  (org-babel-do-load-languages
-   'org-babel-load-languages
-   '((emacs-lisp . t)
-     (clojure . t)
-     (python . t)
-     (js . t)
-     (css . t)
-     (sql . t)
-     (C . t)        ; handles C and C++
-     (go . t)
-     (rust . t)
-     (shell . t))))
+  (save-place-mode 1))
 
-;; Configure backups
+(use-package autorevert
+  :ensure nil
+  :custom
+  (global-auto-revert-non-file-buffers t)
+  :config
+  (global-auto-revert-mode 1))
+
+;; Persist sessions (buffers/files) across restarts
+(desktop-save-mode 1)
+
+;; Configure Backups & Autosaves
 (setq backup-directory-alist `(("." . "~/.emacs.d/backups")))
 
-;; Configure autosave
-;;(setq auto-save-file-name-transforms
-;;     `((".*" "~/.emacs.d/autosave/" t)))
-
-;; Add custom directory to load path
-;; (add-to-list 'load-path "~/.emacs.d/custom/")
-
-;; Add latest Org mode to load path safely (only if the path exists).
+;; Load latest Org mode from custom load path if it exists
 (let ((org-path (expand-file-name "/path/to/org-mode/lisp")))
   (when (file-directory-p org-path)
     (add-to-list 'load-path org-path)))
 
-;; Add any additional custom configurations here
-(custom-set-variables
- ;; custom-set-variables was added by Custom.
- ;; If you edit it by hand, you could mess it up, so be careful.
- ;; Your init file should contain only one such instance.
- ;; If there is more than one, they won't work right.
- '(package-selected-packages nil))
+;; ==========================================
+;; 6. Keybindings & General Utilities
+;; ==========================================
 
-(custom-set-faces
- ;; custom-set-faces was added by Custom.
- ;; If you edit it by hand, you could mess it up, so be careful.
- ;; Your init file should contain only one such instance.
- ;; If there is more than one, they won't work right.
- )
-
-;; Refresh all open buffers from their respective files.
+;; Buffer reverting utility
 (defun revert-all-buffers ()
   "Refresh all open buffers from their respective files."
   (interactive)
@@ -201,170 +162,134 @@
         (revert-buffer t t t))))
   (message "All non-modified buffers reverted."))
 
-(global-set-key (kbd "C-c R") 'revert-all-buffers)  ;; Bind to Ctrl + c, Shift + r
+(global-set-key (kbd "C-c R") 'revert-all-buffers)
+(global-set-key (kbd "C-x C-b") 'list-buffers)
 
+;; Lambda character insertion
+(global-set-key (kbd "C-c l") (lambda () (interactive) (insert "λ")))
 
-;; initial frame setup - experiment 
-(when (display-graphic-p)
-  (toggle-frame-fullscreen))
-;;(list-buffers)
-;;(global-visual-line-mode 1) ;; soft wrap text globally
-(recentf-mode 1) ;; recent files history is saved 
-(savehist-mode 1) ;; recent commands history is saved | use M-n (next-history-element) and M-p (previous-history-element) 
-(setq history-length 25) ;; saves n recent commands 
-(save-place-mode 1) ;; saves cursor location on files 
-(global-auto-revert-mode 1) ;; refreshes all buffers
-(setq global-auto-revert-non-file-buffers t) ;; refreshes non-file buffers (eg: folders)
+;; Spellcheck configuration
+(use-package ispell
+  :ensure nil
+  :custom
+  (ispell-program-name "aspell")
+  (ispell-extra-args '("--sug-mode=ultra")))
 
-;; display commands and keypresses
-;;(split-window-vertically)
-;;(view-lossage) ;; C-h l
+(use-package flyspell
+  :ensure nil
+  :hook (org-mode . flyspell-mode))
 
-;; Install ESS - Emacs speaks statistics - R 
-(use-package ess
-  :ensure t)
+;; Initial buffer listing
+(list-buffers)
 
-;; company - complete anything
+;; ==========================================
+;; 7. Themes & Aesthetics
+;; ==========================================
+
+(use-package modus-themes
+  :defer t)
+
+(use-package auto-dark
+  :init
+  (setq auto-dark-allow-osascript t)
+  :custom
+  (auto-dark-light-theme 'modus-operandi)
+  (auto-dark-dark-theme 'modus-vivendi)
+  :config
+  (auto-dark-mode 1))
+
+;; ==========================================
+;; 8. General Coding Packages
+;; ==========================================
+
+(use-package multiple-cursors
+  :bind (("C-S-c C-S-c" . mc/edit-lines)
+         ("C->" . mc/mark-next-like-this)
+         ("C-<" . mc/mark-previous-like-this)
+         ("C-c C-<" . mc/mark-all-like-this)))
+
+(use-package magit
+  :bind (("C-x g" . magit-status)))
+
 (use-package company
-  :ensure t
   :hook (after-init . global-company-mode)
   :config
-  (setq company-idle-delay 0.2)  ; time in seconds before suggestions pop up
-  (setq company-minimum-prefix-length 1)  ; minimum prefix length for suggestions
-  (setq company-show-numbers t)  ; show numbers for quick selection
-  (setq company-tooltip-align-annotations t)  ; align annotations to the right tooltip border
-  (company-tng-configure-default) ; company tab and go - minor mode 
-  ;; (company-statistics-mode) ; sort completion candidates 
-  )
+  (setq company-idle-delay 0.2)
+  (setq company-minimum-prefix-length 1)
+  (setq company-show-numbers t)
+  (setq company-tooltip-align-annotations t)
+  (company-tng-configure-default))
 
-;; lsp mode
+;; Tree-sitter configuration
+(use-package treesit
+  :ensure nil
+  :config
+  (setq treesit-language-source-alist
+        '((clojure "https://github.com/sogaiu/tree-sitter-clojure")
+          (python "https://github.com/tree-sitter/tree-sitter-python")))
+  (setq major-mode-remap-alist
+        '((clojure-mode . clojure-ts-mode)
+          (python-mode . python-ts-mode))))
+
+;; LSP Settings
 (use-package lsp-mode
-  :ensure t
   :commands (lsp lsp-deferred)
-  ;; Hook LSP to specific programming languages to avoid trying to run it in
-  ;; modes without server support (like Emacs Lisp / elisp-mode).
   :hook ((clojure-mode . lsp)
          (clojure-ts-mode . lsp)
          (python-mode . lsp)
          (python-ts-mode . lsp)
          (lisp-mode . lsp))
+  :init
+  (setq lsp-auto-guess-root t)
+  (setq lsp-headerline-breadcrumb-enable nil)
   :config
-  (setq lsp-log-io t) ; show logs for debugging
+  (setq lsp-log-io t)
   (require 'lsp-clojure))
 
-;; optional: lsp ui settings
 (use-package lsp-ui
-  :ensure t
   :commands lsp-ui-mode
   :hook (lsp-mode . lsp-ui-mode)
   :config
-  (setq lsp-ui-doc-enable t  ; enable inline documentation
-        lsp-ui-doc-position 'at-point  ; position of the documentation
-        lsp-ui-sideline-enable t  ; enable sideline diagnostics
-        lsp-ui-sideline-show-hover t)  ; show hover information in the sideline
-  )
+  (setq lsp-ui-doc-enable t
+        lsp-ui-doc-position 'at-point
+        lsp-ui-sideline-enable t
+        lsp-ui-sideline-show-hover t))
 
-;; optional: customize lsp ui settings
-;; lsp for python
-;; brew install -g pyright ;; for python
-;; (require 'lsp-pyright)
-;; (add-hook 'python-mode-hook #'lsp)
-;; lsp for java
-;; (require 'lsp-java)
-;; (add-hook 'java-mode-hook #'lsp)
+;; ==========================================
+;; 9. Modular Configurations
+;; ==========================================
 
-;; tree sitter
-(setq treesit-language-source-alist
-   '((clojure "https://github.com/sogaiu/tree-sitter-clojure")
-     (python "https://github.com/tree-sitter/tree-sitter-python")))
-(setq major-mode-remap-alist
- '((clojure-mode . clojure-ts-mode)
-   (python-mode . python-ts-mode)))
-;; M-x treesit-install-language-grammar ; manually install languages
+(require 'setup-clojure)
+(require 'setup-llm)
 
-;; insert λ greek notation for λ calculus 
-(global-set-key (kbd "C-c l") (lambda () (interactive) (insert "λ")))
+;; ==========================================
+;; 10. Org Mode & Babel
+;; ==========================================
 
-;; ensure aspell is used as the spell checker
-(setq ispell-program-name "aspell")
-(setq ispell-extra-args '("--sug-mode=ultra"))  ; optional: improve performance
-(add-hook 'org-mode-hook 'flyspell-mode) ; enable flyspell-mode only in Org mode
+;; Define Org-Babel language modes to be installed/deferred automatically
+(use-package go-mode :defer t)
+(use-package rust-mode :defer t)
+(use-package elixir-mode :defer t)
+(use-package scala-mode :defer t)
 
-;; gptel - A simple LLM client for Emacs, configured for Ollama
-(use-package gptel
-  :ensure t
-  :bind (("C-c g s" . gptel-send)
-         ("C-c g m" . gptel-menu))
+(use-package org
   :config
-  ;; Register Ollama backend
-  (gptel-make-ollama "Ollama"
-    :host "localhost:11434"
-    :stream t
-    :models '("qwen3.8:27b-mlx"
-              "muse-glimmer:30b-mlx"
-              "llama3.1:latest"
-              "llama3.2:latest"
-              "gemma4:e4b-mlx"
-              "qwen2.5:14b"
-              "qwen3.6:35b-a3b-coding-nvfp4"
-              "qwen3-coder:30b"
-              "deepseek-r1:14b"))
+  (org-babel-do-load-languages
+   'org-babel-load-languages
+   '((emacs-lisp . t)
+     (clojure . t)
+     (python . t)
+     (js . t)
+     (css . t)
+     (sql . t)
+     (C . t)
+     (go . t)
+     (rust . t)
+     (shell . t))))
 
-  ;; Register Gemini backend and set it as default
-  (setq gptel-backend
-        (gptel-make-gemini "Gemini"
-          :key (lambda ()
-                 (let ((pass-bin (or (executable-find "pass")
-                                     (and (file-executable-p "/opt/homebrew/bin/pass") "/opt/homebrew/bin/pass")
-                                     (and (file-executable-p "/usr/local/bin/pass") "/usr/local/bin/pass")
-                                     "pass")))
-                   (string-trim (shell-command-to-string (concat pass-bin " GEMINI_API_KEY")))))
-          :stream t
-          :models '("gemini-3.6-flash"
-                    "gemini-3.5-flash"
-                    "gemini-3.5-flash-lite"
-                    "gemini-3.1-pro-preview"
-                    "gemini-3.1-flash-lite"
-                    "gemini-2.5-flash"
-                    "gemini-2.5-pro"
-                    "gemini-1.5-flash"
-                    "gemini-1.5-pro")))
+;; ==========================================
+;; 11. Language Statistics
+;; ==========================================
 
-  ; (setq gptel-model "muse-glimmer:30b-mlx")
-  (setq gptel-model "gemini-3.5-flash-lite")
-  ; (setq gptel-model "qwen2.5:14b")
-  ; (setq gptel-model "qwen3.6:35b-a3b-coding-nvfp4")
-  (setq gptel-default-mode 'org-mode)
-  
-  ;; Configure global temperature (0.0 = deterministic/factual, 1.0+ = creative)
-  (setq gptel-temperature 1.0)
-
-  ;; Advise request-data to inject top_p and top_k parameters for Ollama
-  (advice-add 'gptel--request-data :filter-return
-              (lambda (request-data)
-                (when (and (boundp 'gptel-backend)
-                           (fboundp 'gptel-ollama-p)
-                           (gptel-ollama-p gptel-backend))
-                  (let* ((options (plist-get request-data :options))
-                         (updated-options (plist-put (plist-put options :top_p 0.9) :top_k 40)))
-                    (plist-put request-data :options updated-options)))
-                request-data)))
-
-
-;; list buffers
-(list-buffers)
-
-;; Bind C-x C-b to list buffers (if it was overridden)
-(global-set-key (kbd "C-x C-b") 'list-buffers)
-(set-face-attribute 'region nil :background "darkslateblue")
-
-(with-eval-after-load 'info
-  (set-face-attribute 'info-index-match nil :background "darkslateblue"))
-
-(with-eval-after-load 'pulse
-  (set-face-attribute 'pulse-highlight-face nil :background "darkslateblue")
-  (set-face-attribute 'pulse-highlight-start-face nil :background "darkslateblue"))
-
-(with-eval-after-load 'xref
-  (set-face-attribute 'xref-match nil :background "darkslateblue"))
-
+(use-package ess
+  :defer t)

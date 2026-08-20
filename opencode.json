@@ -8,8 +8,8 @@
         "baseURL": "http://localhost:11434/v1"
       },
       "models": {
-        "qwen3-coder:30b": {
-          "name": "Qwen3 Coder 30B (local)"
+        "qwen3-coder-opencode": {
+          "name": "Qwen3 Coder 30B (Optimized)"
         },
         "qwen3.6:35b-a3b-coding-nvfp4": {
           "name": "Qwen3.6 35B Coding (local)"
