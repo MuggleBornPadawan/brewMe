@@ -107,6 +107,44 @@ else
     echo "Skipping Emacs config backup (directory not found)"
 fi
 
+# Define other dotfiles/folders to back up
+DOTFILES_TO_BACKUP=(
+    ".zshrc"
+    ".zprofile"
+    ".tmux.conf"
+    ".gitconfig"
+    ".config/btop"
+    ".config/neofetch"
+)
+
+echo ""
+echo "=== Backing up Dotfiles to backup/ ==="
+for item in "${DOTFILES_TO_BACKUP[@]}"; do
+    SRC="${HOME}/${item}"
+    DEST="${BACKUP_DIR}/${item}"
+    
+    if [ -e "${SRC}" ]; then
+        # Ensure parent directory of destination exists
+        mkdir -p "$(dirname "${DEST}")"
+        
+        # Remove existing destination (which could be a broken symlink or old dir)
+        rm -rf "${DEST}"
+        
+        if [ -d "${SRC}" ]; then
+            # Copy directory (dereferencing symlinks if any)
+            rsync -aL "${SRC}/" "${DEST}/" 2>/dev/null || cp -RLp "${SRC}/." "${DEST}/"
+        else
+            # Copy file (dereferencing symlinks)
+            cp -L "${SRC}" "${DEST}"
+        fi
+        echo "Backed up: ${item}"
+    else
+        echo "Skipping: ${item} (not found)"
+    fi
+done
+
+
+
 
 echo ""
 echo "=== Backup Summary ==="
