@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+echo "=== General instructions ==="
+echo "sudo shutdown -h now"
+echo "tmux new -s alpha"
+echo "emacs -nw"
+echo "============================"
 
 set -euo pipefail
 
@@ -76,4 +81,11 @@ else
     echo "pip not found, skipping."
 fi
 
+echo "=== General instructions ==="
+echo "sudo shutdown -h now"
+echo "tmux new -s alpha"
+echo "emacs -nw"
+echo "my-erc-connect"
+echo "============================"
 echo "=== Done ==="
+
