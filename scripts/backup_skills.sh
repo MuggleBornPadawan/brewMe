@@ -87,6 +87,27 @@ for i in "${!KEYS[@]}"; do
     fi
 done
 
+# Back up Emacs configuration
+echo ""
+echo "=== Backing up Emacs configuration ==="
+EMACS_SRC="${HOME}/.emacs.d"
+EMACS_DEST="${BACKUP_DIR}/.emacs.d"
+
+if [ -d "${EMACS_SRC}" ]; then
+    mkdir -p "${EMACS_DEST}/lisp"
+    [ -f "${EMACS_SRC}/init.el" ] && cp "${EMACS_SRC}/init.el" "${EMACS_DEST}/init.el"
+    [ -f "${EMACS_SRC}/custom.el" ] && cp "${EMACS_SRC}/custom.el" "${EMACS_DEST}/custom.el"
+    [ -f "${EMACS_SRC}/.mc-lists.el" ] && cp "${EMACS_SRC}/.mc-lists.el" "${EMACS_DEST}/.mc-lists.el"
+    if [ -d "${EMACS_SRC}/lisp" ]; then
+        # Copy only .el files from lisp subdirectory
+        rsync -a --include='*.el' --exclude='*' "${EMACS_SRC}/lisp/" "${EMACS_DEST}/lisp/" 2>/dev/null || cp -R "${EMACS_SRC}/lisp/"* "${EMACS_DEST}/lisp/"
+    fi
+    echo "Successfully backed up Emacs configuration."
+else
+    echo "Skipping Emacs config backup (directory not found)"
+fi
+
+
 echo ""
 echo "=== Backup Summary ==="
 if [ "$DRY_RUN" = true ]; then
