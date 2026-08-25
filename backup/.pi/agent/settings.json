@@ -1,0 +1,14 @@
+{
+  "skills": [
+    "~/skills/superpowers/skills",
+    "~/skills/anthropic-skills/skills/docx",
+    "~/skills/anthropic-skills/skills/pdf",
+    "~/skills/anthropic-skills/skills/pptx",
+    "~/skills/anthropic-skills/skills/xlsx",
+    "~/skills/andrej-karpathy-skills/skills/karpathy-guidelines"
+  ],
+  "lastChangelogVersion": "0.84.3",
+  "theme": "dark",
+  "defaultProvider": "opencode",
+  "defaultModel": "x-preview-f-free"
+}
