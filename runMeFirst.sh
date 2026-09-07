@@ -11,35 +11,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${SCRIPT_DIR}"
 
-# Run backups and push before updates
-
-echo "=== Running Backups ==="
-
-# Run backup scripts using the resolved repository root
-if [ -f "${REPO_ROOT}/scripts/backup_skills.sh" ]; then
-    "${REPO_ROOT}/scripts/backup_skills.sh"
-fi
-
-echo "=== Pushing Dotfiles ==="
-cd ~/.dotfiles
-git add .
-if ! git diff-index --quiet HEAD --; then
-    git commit -m "update configs"
-    git push
-else
-    echo "No config changes to push."
-fi
-
-echo "=== Pushing brewMe Repo ==="
-cd "$REPO_ROOT"
-git add .
-if ! git diff-index --quiet HEAD --; then
-    git commit -m "update brewMe scripts"
-    git push
-else
-    echo "No script changes to push."
-fi
-
 # Now perform system package updates
 
 echo "=== Updating MuggleBornPadawan Repo ==="
