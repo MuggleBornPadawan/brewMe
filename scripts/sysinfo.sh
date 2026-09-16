@@ -39,6 +39,23 @@ exec > "$LOGFILE"
 BOLD=""; GREEN=""; BLUE=""; CYAN=""; YELLOW=""; RED=""; RESET=""
 
 OS=$(uname -s)
+# --- Portable timeout helper (macOS has no GNU timeout; brew coreutils = gtimeout) ---
+_TIMEOUT=""
+if command -v timeout >/dev/null 2>&1; then
+    _TIMEOUT="timeout"
+elif command -v gtimeout >/dev/null 2>&1; then
+    _TIMEOUT="gtimeout"
+fi
+with_timeout() {
+    local secs="$1"; shift
+    if [ -n "$_TIMEOUT" ]; then
+        "$_TIMEOUT" "$secs" "$@"
+    elif command -v perl >/dev/null 2>&1; then
+        perl -e 'alarm shift; exec @ARGV' "$secs" "$@"
+    else
+        "$@"
+    fi
+}
 # Capture real values BEFORE redaction for later sed
 REAL_USER="${USER:-$(whoami 2>/dev/null || echo unknown)}"
 REAL_HOST="$(hostname 2>/dev/null || echo unknown)"
@@ -244,12 +261,8 @@ if [ "$OS" = "Linux" ]; then
     fi
 elif [ "$OS" = "Darwin" ]; then
     if command -v system_profiler &>/dev/null; then
-        # timeout 5 to avoid hanging (system_profiler can be slow)
-        if command -v timeout &>/dev/null; then
-            timeout 5 system_profiler SPDisplaysDataType 2>/dev/null | grep -E 'Chipset Model|VRAM|Device ID|Resolution|Displays|Retina|Refresh' | head -n 15 || echo "No GPU info (timeout or no data)"
-        else
-            system_profiler SPDisplaysDataType 2>/dev/null | grep -E 'Chipset Model|VRAM|Device ID|Resolution|Displays|Retina' | head -n 15 || echo "No GPU info available."
-        fi
+        # with_timeout 5 to avoid hanging (system_profiler can be slow)
+        with_timeout 5 system_profiler SPDisplaysDataType 2>/dev/null | grep -E 'Chipset Model|VRAM|Device ID|Resolution|Displays|Retina|Refresh' | head -n 15 || echo "No GPU info (timeout or no data)"
         echo "Note: M1 Max uses Unified Memory — VRAM is shared with system RAM (no dedicated VRAM)"
         # Display resolution
         system_profiler SPDisplaysDataType 2>/dev/null | grep -E 'Resolution|Refresh Rate' | head -n 5
@@ -274,13 +287,18 @@ print_subheader "Top 5 Memory-Consuming Processes"
 
 # Extra: load + process counts
 echo ""
-echo "Process counts: total $(ps aux | wc -l | tr -d ' ') (incl. header), running $(ps aux | awk '$8 ~ /R/ {c++} END{print c+0}')"
-echo "Zombie check  : $(ps aux | awk '$8 ~ /Z/ {print $2, $11}' | head -n 5 || echo 'none')"
+# macOS ps aux STAT is col 8, but header-aware counting avoids off-by-one
+_total_ps=$(ps aux | tail -n +2 | wc -l | tr -d ' ')
+_running_ps=$(ps aux | tail -n +2 | awk '$8 ~ /R/ {c++} END{print c+0}')
+_zombies=$(ps aux | tail -n +2 | awk '$8 ~ /^Z/ {print $2, $11}' | head -n 5)
+[ -z "$_zombies" ] && _zombies="none"
+echo "Process counts: total $_total_ps, running $_running_ps"
+echo "Zombie check  : $_zombies"
 
 print_subheader "Memory Pressure (macOS)"
 if [ "$OS" = "Darwin" ]; then
     if command -v memory_pressure &>/dev/null; then
-        timeout 3 memory_pressure 2>&1 | head -n 10 || echo "memory_pressure timed out"
+        with_timeout 3 memory_pressure 2>&1 | head -n 10 || echo "memory_pressure timed out"
     else
         echo "memory_pressure not available"
     fi
@@ -337,8 +355,8 @@ if [ "$OS" = "Darwin" ]; then
     # Bluetooth
     print_subheader "Bluetooth"
     if command -v system_profiler &>/dev/null; then
-        if command -v timeout &>/dev/null; then
-            timeout 5 system_profiler SPBluetoothDataType 2>/dev/null | head -n 15 || echo "Bluetooth info timeout"
+        if [ -n "$_TIMEOUT" ] || command -v perl &>/dev/null; then
+            with_timeout 5 system_profiler SPBluetoothDataType 2>/dev/null | head -n 15 || echo "Bluetooth info timeout"
         else
             system_profiler SPBluetoothDataType 2>/dev/null | head -n 15
         fi
@@ -464,8 +482,8 @@ if [ "$OS" = "Linux" ] && command -v journalctl &>/dev/null; then
 elif [ "$OS" = "Darwin" ] && command -v log &>/dev/null; then
     # Use predicate + timeout to avoid 10s hang and DCP spam
     echo "Unified log (last 5m, errors only, timeout 6s):"
-    if command -v timeout &>/dev/null; then
-        timeout 6 log show --predicate 'messageType == error' --last 5m --style compact 2>/dev/null | head -n 15 || echo "log show timed out or no errors"
+    if [ -n "$_TIMEOUT" ] || command -v perl &>/dev/null; then
+        with_timeout 6 log show --predicate 'messageType == error' --last 5m --style compact 2>/dev/null | head -n 15 || echo "log show timed out or no errors"
     else
         # fallback: log show with grep but limited
         log show --last 5m --style compact 2>/dev/null | grep -iE 'error|fail|crash|panic' | grep -v -E 'DCP|AirPlayXPCHelper' | head -n 10 || echo "No recent errors in unified log."
@@ -587,8 +605,8 @@ if [ "$OS" = "Darwin" ]; then
     fi
     print_subheader "Power Data (system_profiler SPPowerDataType)"
     if command -v system_profiler &>/dev/null; then
-        if command -v timeout &>/dev/null; then
-            timeout 5 system_profiler SPPowerDataType 2>/dev/null | grep -E 'Battery Health|Cycle Count|Condition|Capacity|Amperage|Voltage|Wattage|Charging' | head -n 15 || echo "No power data (timeout)"
+        if [ -n "$_TIMEOUT" ] || command -v perl &>/dev/null; then
+            with_timeout 5 system_profiler SPPowerDataType 2>/dev/null | grep -E 'Battery Health|Cycle Count|Condition|Capacity|Amperage|Voltage|Wattage|Charging' | head -n 15 || echo "No power data (timeout)"
         else
             system_profiler SPPowerDataType 2>/dev/null | grep -E 'Battery Health|Cycle Count|Condition|Capacity|Amperage|Voltage' | head -n 15
         fi
@@ -604,11 +622,11 @@ if [ "$OS" = "Darwin" ]; then
     # Try powermetrics without sudo (limited) — timeout quickly
     if command -v powermetrics &>/dev/null; then
         echo "powermetrics (SMC, 1 sample, timeout 4s):"
-        if command -v timeout &>/dev/null; then
-            if sudo -n powermetrics --samplers smc -n 1 2>&1 | head -n 30; then
-                timeout 4 sudo -n powermetrics --samplers smc -n 1 2>&1 | head -n 30 || echo "powermetrics requires sudo (skipped)"
+        if [ -n "$_TIMEOUT" ] || command -v perl &>/dev/null; then
+            if sudo -n true 2>/dev/null; then
+                with_timeout 4 sudo -n powermetrics --samplers smc -n 1 2>&1 | head -n 30 || echo "powermetrics requires sudo (skipped)"
             else
-                timeout 4 powermetrics --samplers smc -n 1 2>&1 | head -n 20 || echo "powermetrics requires sudo/password (skipped — run: sudo powermetrics --samplers smc -n 1)"
+                echo "powermetrics requires sudo/password (skipped — run: sudo powermetrics --samplers smc -n 1)"
             fi
         else
             echo "powermetrics available — run manually: sudo powermetrics --samplers smc -n 1"
@@ -622,8 +640,8 @@ if [ "$OS" = "Darwin" ]; then
 
     print_subheader "Display & Power Mode"
     if command -v system_profiler &>/dev/null; then
-        if command -v timeout &>/dev/null; then
-            timeout 5 system_profiler SPDisplaysDataType 2>/dev/null | grep -E 'Resolution|Refresh|Main Display|Connection Type' | head -n 10
+        if [ -n "$_TIMEOUT" ] || command -v perl &>/dev/null; then
+            with_timeout 5 system_profiler SPDisplaysDataType 2>/dev/null | grep -E 'Resolution|Refresh|Main Display|Connection Type' | head -n 10
         fi
     fi
     # Low Power Mode
@@ -671,8 +689,8 @@ command -v git &>/dev/null && git --version 2>&1 | head -n 1 || echo "Git: not f
 print_subheader "Pending Updates (macOS)"
 if [ "$OS" = "Darwin" ] && command -v softwareupdate &>/dev/null; then
     echo "Checking softwareupdate -l (timeout 10s)..."
-    if command -v timeout &>/dev/null; then
-        timeout 10 softwareupdate -l 2>&1 | head -n 20 || echo "softwareupdate timed out or no updates"
+    if [ -n "$_TIMEOUT" ] || command -v perl &>/dev/null; then
+        with_timeout 10 softwareupdate -l 2>&1 | head -n 20 || echo "softwareupdate timed out or no updates"
     else
         echo "softwareupdate available — run manually: softwareupdate -l"
     fi
