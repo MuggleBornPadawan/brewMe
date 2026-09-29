@@ -362,8 +362,23 @@ if [ "$OS" = "Darwin" ]; then
         fi
     fi
     # VPN check
-    print_subheader "VPN / Interfaces (ifconfig brief)"
-    ifconfig 2>/dev/null | grep -E '^[a-z0-9]+:|inet |utun|ipsec' | head -n 20
+    print_subheader "VPN Status"
+    if command -v scutil &>/dev/null; then
+        CONNECTED_VPNS=$(scutil --nc list 2>/dev/null | grep "\*(Connected)" || true)
+    else
+        CONNECTED_VPNS=""
+    fi
+    ACTIVE_TUNNELS=$(ifconfig 2>/dev/null | grep -E "^(utun|ppp|tun|tap|wireguard)[0-9]+" || true)
+    
+    if [ -n "$CONNECTED_VPNS" ]; then
+        echo "[ACTIVE] Connected VPN Services:"
+        echo "$CONNECTED_VPNS"
+    elif [ -n "$ACTIVE_TUNNELS" ]; then
+        echo "[ACTIVE] Tunnel Interfaces Detected:"
+        echo "$ACTIVE_TUNNELS"
+    else
+        echo "[INACTIVE] No active VPN or tunnel interfaces detected."
+    fi
 fi
 
 print_subheader "Default Gateway & Routing Table"
