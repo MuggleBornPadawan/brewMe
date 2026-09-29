@@ -88,10 +88,8 @@ else
   echo "Home dotfiles (symlinked vs real):"
   ls -la "${HOME}" | grep -E "^l|^d|^-" | grep "^\." | head -n 40 || true
 
-  # 4b. Reverse-sync managed files (HOME → repo) — same mapping as setup.sh
-  #     If HOME is already a correct symlink, skip. If HOME has a real file/dir
-  #     that differs, copy it back to repo (after secret check per file).
-  echo "--- Syncing managed dotfiles (HOME → repo) ---"
+  # 4b. Verify / sync managed dotfiles (Single Source of Truth in ~/.dotfiles)
+  echo "--- Checking managed dotfiles symlinks ---"
   FILES=(
     "zsh/.zshrc:.zshrc"
     "zsh/.zprofile:.zprofile"
@@ -99,6 +97,11 @@ else
     "git/.gitconfig:.gitconfig"
     "config/.config/btop:.config/btop"
     "config/.config/neofetch:.config/neofetch"
+    "emacs/init.el:.emacs.d/init.el"
+    "emacs/custom.el:.emacs.d/custom.el"
+    "emacs/lisp:.emacs.d/lisp"
+    "skills/gemini:.gemini/config/skills"
+    "skills/opencode:.config/opencode/skills"
     "pi/.pi/agent/AGENTS.md:.pi/agent/AGENTS.md"
     "pi/.pi/agent/settings.json:.pi/agent/settings.json"
     "pi/.pi/agent/models.json:.pi/agent/models.json"
@@ -108,122 +111,25 @@ else
     "pi/.pi/agent/scripts:.pi/agent/scripts"
   )
 
-  # Helper: check if a file likely contains a secret (best-effort, no false negatives panic)
-  has_secret() {
-    local f="$1"
-    [ -f "$f" ] || return 1
-    # High-signal patterns: AWS keys, GitHub PAT, OpenAI sk-*, generic api_key/secret/token assignments
-    if grep -q -i -E \
-      -e 'AKIA[0-9A-Z]{16}' \
-      -e 'ghp_[A-Za-z0-9]{36,}' -e 'gho_[A-Za-z0-9]{36,}' -e 'github_pat_[A-Za-z0-9_]{80,}' \
-      -e 'sk-[A-Za-z0-9]{20,}' -e 'sk-proj-[A-Za-z0-9_-]{20,}' \
-      -e '-----BEGIN (RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----' \
-      -e '(api[_-]?key|apikey|secret[_-]?key|aws_secret|oauth_token)[[:space:]]*[:=][[:space:]]*["'\'']?[A-Za-z0-9_\/+=-]{3,}' \
-      "$f" 2>/dev/null; then
-      return 0
-    fi
-    return 1
-  }
-
   for entry in "${FILES[@]}"; do
     IFS=":" read -r src_rel dst_rel <<< "${entry}"
     SRC="${DOTFILES_DIR}/${src_rel}"
     DST="${HOME}/${dst_rel}"
-    [ -e "${DST}" ] || [ -L "${DST}" ] || { echo "  skip ${dst_rel}: not present in HOME"; continue; }
-    # If correct symlink, nothing to sync
+    if [ ! -e "${SRC}" ]; then
+      echo "  ⚠ ${src_rel} does not exist in repo — skipping"
+      continue
+    fi
+    mkdir -p "$(dirname "${DST}")"
     if [ -L "${DST}" ] && [ "$(readlink "${DST}")" = "${SRC}" ]; then
-      echo "  ✓ ${dst_rel} already symlinked — no sync needed"
+      echo "  ✓ ${dst_rel} correctly symlinked"
       continue
     fi
-    # Deny secrets for this file before any copy
-    if has_secret "${DST}"; then
-      echo "  ✗ ${dst_rel} appears to contain a secret — SKIPPED (not copied to repo)"
-      continue
-    fi
-    # Ensure parent dir exists in repo
-    mkdir -p "$(dirname "${SRC}")"
-    # If SRC exists and is identical, skip
-    if [ -e "${SRC}" ] && diff -qr "${DST}" "${SRC}" >/dev/null 2>&1; then
-      echo "  ✓ ${dst_rel} identical to repo — skipping"
-      continue
-    fi
-    echo "  ↻ syncing ${dst_rel} → ${src_rel}"
-    if [ -d "${DST}" ] && [ ! -L "${DST}" ]; then
-      # Directory: rsync with denylist for any nested secrets/caches (non-fatal on permission errors)
-      rsync -av --delete \
-        --exclude='.git/' --exclude='*.log' --exclude='.DS_Store' \
-        --exclude='auth.json' --exclude='models-store.json' --exclude='opencode-free-state.json' \
-        --exclude='sessions/' --exclude='logs/' --exclude='bin/' \
-        --exclude='.cache/' --exclude='__pycache__/' --exclude='node_modules/' \
-        "${DST}/" "${SRC}/" || echo "  ⚠ rsync warning for ${dst_rel} — continuing (permission or vanished file)"
-    else
-      cp -p "${DST}" "${SRC}" || echo "  ⚠ cp warning for ${dst_rel} — continuing"
-    fi
+    echo "  ↻ linking ${dst_rel} → ${SRC}"
+    rm -rf "${DST}"
+    ln -s "${SRC}" "${DST}"
   done
 
-  # 4c. Optional snapshot of *other* safe dotfiles into backup/ (sanitized)
-  #     This captures "all dotfiles" beyond the primary FILES, but with a strict denylist.
-  #     Secrets, caches, and large stores are never snapshotted. Backup/ is versioned
-  #     per README (not symlinked by setup.sh) — useful for diffing across machines.
-  echo "--- Snapshotting extra dotfiles into backup/ (denylist enforced) ---"
-  mkdir -p "${DOTFILES_BACKUP_DIR}"
-  # Denylist patterns for the snapshot (same philosophy as .gitignore + extras)
-  SNAPSHOT_EXCLUDES=(
-    ".dotfiles" ".dotfiles_backup" ".Trash" ".cache" ".local" ".npm" ".docker"
-    ".ollama" ".opencode" ".claude" ".gemini" ".hermes" ".jenkins" ".m2"
-    ".homebrew" ".password-store" ".gnupg" ".ssh" ".config/gh" ".config/opencode"
-    ".zsh_history" ".bash_history" ".viminfo" ".lesshst" ".psql_history"
-    ".python_history" ".sqlite_history" ".DS_Store" ".CFUserTextEncoding"
-  )
-  is_excluded() {
-    local name="$1"
-    for ex in "${SNAPSHOT_EXCLUDES[@]}"; do
-      [[ "${name}" == "${ex}" ]] && return 0
-      [[ "${name}" == "${ex}"/* ]] && return 0
-    done
-    return 1
-  }
-  # Example safe extras to snapshot if present: .emacs.d, .config/htop, .config/btop (already primary), .config/neofetch
-  EXTRA_SOURCES=(
-    ".emacs.d"
-    ".config/htop"
-    ".config/nvim"
-    ".config/karabiner"
-    ".config/starship.toml"
-  )
-  for rel in "${EXTRA_SOURCES[@]}"; do
-    src="${HOME}/${rel}"
-    dst="${DOTFILES_BACKUP_DIR}/${rel}"
-    [ -e "${src}" ] || continue
-    is_excluded "${rel}" && { echo "  skip backup/${rel} — denylisted"; continue; }
-    if has_secret "${src}" 2>/dev/null; then
-      echo "  ✗ backup/${rel} contains secret pattern — SKIPPED"
-      continue
-    fi
-    # Skip unreadable sources (e.g., root-owned htoprc) — best practice: don't sudo silently
-    if [ ! -r "${src}" ]; then
-      echo "  ⚠ backup/${rel} not readable — SKIPPED (permission denied, run sudo manually if desired)"
-      continue
-    fi
-    echo "  ↻ snapshot ${rel} → backup/${rel}"
-    mkdir -p "$(dirname "${dst}")"
-    if [ -d "${src}" ]; then
-      rsync -av --delete --delete-excluded \
-        --exclude='.git/' --exclude='*.log' --exclude='.DS_Store' \
-        --exclude='eln-cache/' --exclude='elpa/' --exclude='.cache/' \
-        --exclude='backups/' --exclude='auto-save-list/' \
-        --exclude='transient/' --exclude='tree-sitter/' --exclude='tutorial/' \
-        --exclude='*.bak' --exclude='*~' --exclude='*.elc' \
-        --exclude='.emacs.desktop' --exclude='.emacs.desktop.lock' --exclude='.lsp-session-v1' --exclude='.persistent-scratch' \
-        --exclude='cider-history' --exclude='eww-bookmarks' --exclude='history' \
-        --exclude='places' --exclude='recentf' --exclude='tramp' --exclude='.mc-lists.el' \
-        "${src}/" "${dst}/" || echo "  ⚠ rsync warning for backup/${rel} — continuing"
-    else
-      cp -p "${src}" "${dst}" || echo "  ⚠ cp warning for backup/${rel} — continuing"
-    fi
-  done
-
-  # 4d. Stage, secret-scan staged diff, commit, push
+  # 4c. Stage, secret-scan staged diff, commit, push
   echo "--- Git status in ${DOTFILES_DIR} ---"
   cd "${DOTFILES_DIR}"
   # Refresh index, show what would be committed (respects .gitignore)
