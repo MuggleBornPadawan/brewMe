@@ -31,35 +31,12 @@ else
     echo "Homebrew not found, skipping."
 fi
 
-# 2. Update npm packages
-if command -v npm > /dev/null 2>&1; then
-    echo "Updating npm..."
-    npm update
+# 2. Dotfiles backup via Babashka
+echo "=== Backing up dotfiles via Babashka ==="
+if command -v bb > /dev/null 2>&1 && [ -f "$HOME/.dotfiles/coding-harness/skills/dotfiles-sync/scripts/backup_push.clj" ]; then
+    bb "$HOME/.dotfiles/coding-harness/skills/dotfiles-sync/scripts/backup_push.clj"
 else
-    echo "npm not found, skipping."
-fi
-
-# 3. Update outdated pip packages efficiently in a single run
-if command -v pip > /dev/null 2>&1; then
-    echo "Updating outdated pip packages..."
-    outdated_pip=$(pip list --outdated | awk 'NR>2 {print $1}')
-    if [ -n "$outdated_pip" ]; then
-        echo "$outdated_pip" | xargs pip install -U --break-system-packages 2>&1 || echo "⚠ pip update failed (externally-managed / PEP 668) — skipping. Use 'pipx' or 'brew install' for apps."
-    else
-        echo "All pip packages are up to date."
-    fi
-else
-    echo "pip not found, skipping."
-fi
-
-# ──────────────────────────────────────────────────────────────
-# 4. Dotfiles backup → $HOME/.dotfiles → GitHub (best practices)
-# ──────────────────────────────────────────────────────────────
-echo "=== Backing up dotfiles to \$HOME/.dotfiles ==="
-if [ -f "${SCRIPT_DIR}/scripts/backup_dotfiles.sh" ]; then
-  bash "${SCRIPT_DIR}/scripts/backup_dotfiles.sh"
-else
-  echo "⚠ Warning: ${SCRIPT_DIR}/scripts/backup_dotfiles.sh not found."
+    echo "⚠ Babashka or backup_push.clj not found, skipping dotfiles sync."
 fi
 
 echo "=== General instructions ==="
